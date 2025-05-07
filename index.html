@@ -37,11 +37,11 @@ const RETRY_OFFLINE_MS    = 180_000;  // check live every 3 min
 const chatBox = document.getElementById("chat");
 function addMessage({src,name,text,color="#fff"}){
   const row=document.createElement("div");row.className="msg";
-  row.innerHTML = \`
-      <span class="time">\${new Date().toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span>
-      <span class="icon \${src}"></span>
-      <span class="name" style="color:\${color}">\${name}</span>
-      <span> \${text}</span>\`;
+  row.innerHTML = `
+      <span class="time">${new Date().toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span>
+      <span class="icon ${src}"></span>
+      <span class="name" style="color:${color}">${name}</span>
+      <span> ${text}</span>`;
   chatBox.appendChild(row);
   while(chatBox.children.length>MAX_LINES) chatBox.removeChild(chatBox.firstChild);
   chatBox.scrollTop=chatBox.scrollHeight;
@@ -60,7 +60,7 @@ async function initYouTube(){
     const chanId = await resolveChannelId(YT_CHANNEL);
     const liveId = await getLiveVideoId(chanId);
     if(!liveId) return setTimeout(initYouTube, RETRY_OFFLINE_MS);
-    const v = await fetchJSON(\`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=\${liveId}&key=\${YT_API_KEY}\`);
+    const v = await fetchJSON(`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${liveId}&key=${YT_API_KEY}`);
     ytChatId = v.items[0].liveStreamingDetails.activeLiveChatId;
     pollYT();
   }catch(e){console.error(e); setTimeout(initYouTube, RETRY_OFFLINE_MS);}
@@ -79,14 +79,14 @@ async function pollYT(){
 /* helpers */
 function fetchJSON(u,opt){return fetch(u,opt).then(r=>r.json());}
 async function resolveChannelId(handle){
-  const r=await fetchJSON(\`https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=%40\${handle}&key=\${YT_API_KEY}\`);
+  const r=await fetchJSON(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=%40${handle}&key=${YT_API_KEY}`);
   if(r.items?.length) return r.items[0].id.channelId;
-  const r2=await fetchJSON(\`https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=\${handle}&key=\${YT_API_KEY}\`);
+  const r2=await fetchJSON(`https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=${handle}&key=${YT_API_KEY}`);
   if(r2.items?.length) return r2.items[0].id;
   throw new Error("Channel not found");
 }
 async function getLiveVideoId(id){
-  const r=await fetchJSON(\`https://www.googleapis.com/youtube/v3/search?part=id&channelId=\${id}&eventType=live&type=video&key=\${YT_API_KEY}\`);
+  const r=await fetchJSON(`https://www.googleapis.com/youtube/v3/search?part=id&channelId=${id}&eventType=live&type=video&key=${YT_API_KEY}`);
   return r.items?.[0]?.id?.videoId||null;
 }
 </script>
