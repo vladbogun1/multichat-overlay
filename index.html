@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Merged Twitch + YouTube Chat</title>
+<style>
+html,body{margin:0;background:transparent;font:14px/1.35 "Inter","Segoe UI",Arial,sans-serif}
+#chat{width:400px;max-height:600px;overflow-y:hidden;display:flex;flex-direction:column;padding:4px 0}
+.msg{display:inline-block;background:rgba(118,118,118,.5);margin-bottom:5px;padding:2px 8px 2px 4px;color:#fff;white-space:pre-wrap}
+.msg>span{display:inline-block;padding-left:8px}
+.time{color:#8b8b8b;font:12px/1.2 "Consolas","Courier New",monospace;width:52px;text-align:right}
+.icon{width:16px;height:16px}
+.icon.yt{background:url('data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjRjYxQzBEIiB2aWV3Qm94PSIwIDAgNDYxIDQ2MSI+PHBhdGggZD0iTTM2NS4yIDY3LjNINS4yQzQyLjkgNjcuMyAwIDExMC4yIDAgMTYzLjF2MTM0Ljc1YzAgNTIuODcgNDIuOS4wIDk1Ljc1IDk1Ljc1aDI2OS41YzUyLjg2IDAgOTUuNzUtNDIuODggOTUuNzUtOTUuNzVWMTYzLjFDNDU3LjUgMTEwLjIgNDE0LjYgNjcuMyAzNjUuMiA2Ny4zeiIvPjxwYXRoIGQ9Ik0zMDAuNSAyMzcuMDYgMTc0LjQgMTk2Ljk0Yy0zLjM2LTEuNi03LjI0Ljg0LTcuMjQgNC41NnY2MC4xMmMwIDMuNzIgMy45OCA2LjIyIDcuMzQgNC41MWwxMjYuMDYtNjMuODhhNS4xIDUuMSAwIDAgMCAuMTEtOS4wOHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=') center/contain no-repeat}
+.icon.tw{background:url('data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjOTE0NkZGIiB2aWV3Qm94PSIwIDAgMTYgMTYiPjxwYXRoIGQ9Ik0xMyA3LjVsLTIgMkg5TDcuMjUgMTAuNzVWOUM1VjJoOHY1LjV6Ii8+PHBhdGggZD0iTTQuNSAxTDIgMy41djlIM1YxNWwyLjUtMi41aDJMMTQgOFYxSDQuNXpNMTMgNy41bC0yIDJIOS4yNUw3LjUgMTAuNzVWOS41SDVWMm g4djUuNXoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=') center/contain no-repeat}
+.name{font-weight:600;margin-right:4px}
+.msg:hover{background:rgba(255,255,255,.05)}
+</style>
+
+<div id="chat"></div>
+
+<!-- import tmi.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/tmi.js@1.8.5/dist/tmi.min.js"></script>
+<script>
+/* CONFIG */
+const TWITCH_CHANNEL      = "your_twitch_login";
+const YT_CHANNEL          = "your_yt_channel_nickname";
+const YT_API_KEY          = "YOUR_YT_KEY_HERE";
+
+const MAX_LINES           = 45;
+const MIN_POLL_MS         = 8_000;    // safe for 4‑hour stream
+const RETRY_OFFLINE_MS    = 180_000;  // check live every 3 min
+
+/* DOM helpers */
+const chatBox = document.getElementById("chat");
+function addMessage({src,name,text,color="#fff"}){
+  const row=document.createElement("div");row.className="msg";
+  row.innerHTML = \`
+      <span class="time">\${new Date().toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span>
+      <span class="icon \${src}"></span>
+      <span class="name" style="color:\${color}">\${name}</span>
+      <span> \${text}</span>\`;
+  chatBox.appendChild(row);
+  while(chatBox.children.length>MAX_LINES) chatBox.removeChild(chatBox.firstChild);
+  chatBox.scrollTop=chatBox.scrollHeight;
+}
+
+/* Twitch */
+const twitch = new tmi.Client({channels:[TWITCH_CHANNEL]});
+twitch.connect();
+twitch.on("message",(ch,user,msg)=>addMessage({src:"tw",name:user["display-name"]||user.username,text:msg,color:user.color||"#50fa7b"}));
+
+/* YouTube */
+let ytChatId="", nextPage="";
+initYouTube();
+async function initYouTube(){
+  try{
+    const chanId = await resolveChannelId(YT_CHANNEL);
+    const liveId = await getLiveVideoId(chanId);
+    if(!liveId) return setTimeout(initYouTube, RETRY_OFFLINE_MS);
+    const v = await fetchJSON(\`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=\${liveId}&key=\${YT_API_KEY}\`);
+    ytChatId = v.items[0].liveStreamingDetails.activeLiveChatId;
+    pollYT();
+  }catch(e){console.error(e); setTimeout(initYouTube, RETRY_OFFLINE_MS);}
+}
+async function pollYT(){
+  try{
+    const url=new URL("https://www.googleapis.com/youtube/v3/liveChat/messages");
+    url.search=new URLSearchParams({part:"snippet,authorDetails",liveChatId:ytChatId,pageToken:nextPage,key:YT_API_KEY});
+    const d=await fetchJSON(url); nextPage=d.nextPageToken||"";
+    (d.items||[]).forEach(m=>addMessage({src:"yt",name:m.authorDetails.displayName,text:m.snippet.displayMessage,color:"#1DA1F2"}));
+    const next=Math.max(d.pollingIntervalMillis||MIN_POLL_MS,MIN_POLL_MS);
+    setTimeout(pollYT,next);
+  }catch(e){console.error(e); setTimeout(pollYT,MIN_POLL_MS);}
+}
+
+/* helpers */
+function fetchJSON(u,opt){return fetch(u,opt).then(r=>r.json());}
+async function resolveChannelId(handle){
+  const r=await fetchJSON(\`https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=%40\${handle}&key=\${YT_API_KEY}\`);
+  if(r.items?.length) return r.items[0].id.channelId;
+  const r2=await fetchJSON(\`https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=\${handle}&key=\${YT_API_KEY}\`);
+  if(r2.items?.length) return r2.items[0].id;
+  throw new Error("Channel not found");
+}
+async function getLiveVideoId(id){
+  const r=await fetchJSON(\`https://www.googleapis.com/youtube/v3/search?part=id&channelId=\${id}&eventType=live&type=video&key=\${YT_API_KEY}\`);
+  return r.items?.[0]?.id?.videoId||null;
+}
+</script>
